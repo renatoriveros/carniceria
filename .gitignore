@@ -1,24 +1,27 @@
-# Ignore files for root directory
+*.log
 .DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.codex
+/.cursor/
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+_ide_helper.php
+Homestead.json
+Homestead.yaml
 Thumbs.db
-
-# Laravel ignored files
-/carniceria-backend/vendor/
-/carniceria-backend/.env
-/carniceria-backend/storage/*.key
-/carniceria-backend/public/storage
-/carniceria-backend/.phpunit.result.cache
-
-# React ignored files
-/carniceria-frontend/node_modules/
-/carniceria-frontend/dist/
-/carniceria-frontend/.eslintcache
-/carniceria-frontend/npm-debug.log*
-/carniceria-frontend/yarn-debug.log*
-/carniceria-frontend/yarn-error.log*
-/carniceria-frontend/pnpm-debug.log*
-
-# Portable tools (just in case they put them inside, though they are in Tobal/)
-/node/
-/php/
-/git/
