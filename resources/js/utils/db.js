@@ -188,6 +188,82 @@ const INITIAL_SALES = [
   }
 ];
 
+const INITIAL_FACTURAS_RECIBIDAS = [
+  {
+    id_dte: 1,
+    tipo_dte: 33,
+    folio: 48523,
+    fecha_emision: '2026-08-10',
+    fecha_recepcion_sii: '2026-08-10T14:30:00',
+    rut_emisor: '76.543.210-K',
+    razon_social_emisor: 'Frigorífico Temuco SpA',
+    giro_emisor: 'Procesamiento y Distribución de Carnes',
+    rut_receptor: '77.888.999-1',
+    monto_neto: 485000,
+    iva: 92150,
+    monto_total: 577150,
+    estado: 'Pendiente',
+    dias_restantes: 6,
+    items: [
+      { descripcion: 'Ojo de Bife (Ribeye) Premium', cantidad: 15, unidad: 'kg', precio_unitario: 9500, subtotal: 142500 },
+      { descripcion: 'Entraña Premium Angus', cantidad: 12, unidad: 'kg', precio_unitario: 11800, subtotal: 141600 },
+      { descripcion: 'Nalga / Milanesa', cantidad: 20, unidad: 'kg', precio_unitario: 3800, subtotal: 76000 },
+      { descripcion: 'Carne Picada Especial', cantidad: 30, unidad: 'kg', precio_unitario: 2800, subtotal: 84000 },
+      { descripcion: 'Flete refrigerado', cantidad: 1, unidad: 'servicio', precio_unitario: 40900, subtotal: 40900 }
+    ],
+    observaciones: 'Despacho Lote #L2026-0810. Camión frigorífico patente BGKR-42.'
+  },
+  {
+    id_dte: 2,
+    tipo_dte: 33,
+    folio: 12087,
+    fecha_emision: '2026-08-06',
+    fecha_recepcion_sii: '2026-08-06T09:15:00',
+    rut_emisor: '78.901.234-5',
+    razon_social_emisor: 'Distribuidora Don Carlos Ltda.',
+    giro_emisor: 'Venta al por mayor de abarrotes',
+    rut_receptor: '77.888.999-1',
+    monto_neto: 124000,
+    iva: 23560,
+    monto_total: 147560,
+    estado: 'Aceptada',
+    dias_restantes: 0,
+    fecha_aceptacion: '2026-08-07T10:00:00',
+    items: [
+      { descripcion: 'Aceite Girasol 1.5L (caja x12)', cantidad: 2, unidad: 'caja', precio_unitario: 22000, subtotal: 44000 },
+      { descripcion: 'Arroz Largo Fino 1kg (fardo x10)', cantidad: 3, unidad: 'fardo', precio_unitario: 10000, subtotal: 30000 },
+      { descripcion: 'Fideos Tallarín 500g (paquete x20)', cantidad: 2, unidad: 'paquete', precio_unitario: 8500, subtotal: 17000 },
+      { descripcion: 'Yerba Mate 500g (paquete x10)', cantidad: 2, unidad: 'paquete', precio_unitario: 16500, subtotal: 33000 }
+    ],
+    observaciones: 'Pedido semanal habitual. Guía despacho #GD-4521.'
+  },
+  {
+    id_dte: 3,
+    tipo_dte: 33,
+    folio: 7841,
+    fecha_emision: '2026-08-12',
+    fecha_recepcion_sii: '2026-08-12T16:45:00',
+    rut_emisor: '80.112.233-7',
+    razon_social_emisor: 'Carnes del Sur S.A.',
+    giro_emisor: 'Faenamiento y Comercialización de Ganado',
+    rut_receptor: '77.888.999-1',
+    monto_neto: 890000,
+    iva: 169100,
+    monto_total: 1059100,
+    estado: 'Pendiente',
+    dias_restantes: 7,
+    items: [
+      { descripcion: 'Lomo Vetado Novillo', cantidad: 25, unidad: 'kg', precio_unitario: 12000, subtotal: 300000 },
+      { descripcion: 'Costillar Cerdo', cantidad: 40, unidad: 'kg', precio_unitario: 4500, subtotal: 180000 },
+      { descripcion: 'Pechuga Pollo (bandeja 2kg)', cantidad: 50, unidad: 'bandeja', precio_unitario: 4200, subtotal: 210000 },
+      { descripcion: 'Chorizo Parrillero (paquete 1kg)', cantidad: 30, unidad: 'paquete', precio_unitario: 3500, subtotal: 105000 },
+      { descripcion: 'Longaniza Artesanal (paquete 1kg)', cantidad: 20, unidad: 'paquete', precio_unitario: 4000, subtotal: 80000 },
+      { descripcion: 'Flete y seguro de carga', cantidad: 1, unidad: 'servicio', precio_unitario: 15000, subtotal: 15000 }
+    ],
+    observaciones: 'Lote #LS-2026-2247. Guía sanitaria SAG adjunta. Temperatura recepción: -2°C.'
+  }
+];
+
 export const initDB = () => {
   if (!localStorage.getItem('se_categories')) {
     localStorage.setItem('se_categories', JSON.stringify(INITIAL_CATEGORIES));
@@ -203,6 +279,9 @@ export const initDB = () => {
   }
   if (!localStorage.getItem('se_cash_moves')) {
     localStorage.setItem('se_cash_moves', JSON.stringify([]));
+  }
+  if (!localStorage.getItem('se_facturas_recibidas')) {
+    localStorage.setItem('se_facturas_recibidas', JSON.stringify(INITIAL_FACTURAS_RECIBIDAS));
   }
   if (!localStorage.getItem('se_user')) {
     // Default to guest or null, but we'll check it on login
@@ -394,7 +473,10 @@ export const createSale = (saleData) => {
     })),
     subtotal: saleData.subtotal,
     descuento: saleData.descuento || 0,
-    estado_sii: 'Pendiente' // SII status
+    estado_sii: 'Pendiente', // SII status
+    transbank_auth_code: saleData.transbank_auth_code || null,
+    transbank_last4: saleData.transbank_last4 || null,
+    transbank_response_code: saleData.transbank_response_code || null
   };
 
   sales.push(newSale);
@@ -444,4 +526,116 @@ export const transmitSalesToSII = (saleIds) => {
     }
   });
   localStorage.setItem('se_sales', JSON.stringify(sales));
+};
+
+// Facturas Recibidas (DTE 33 - Compras a proveedores)
+export const getFacturasRecibidas = () => {
+  initDB();
+  return JSON.parse(localStorage.getItem('se_facturas_recibidas')) || [];
+};
+
+export const aceptarFactura = (id_dte) => {
+  const facturas = getFacturasRecibidas();
+  const idx = facturas.findIndex(f => f.id_dte === id_dte);
+  if (idx !== -1) {
+    facturas[idx].estado = 'Aceptada';
+    facturas[idx].dias_restantes = 0;
+    facturas[idx].fecha_aceptacion = new Date().toISOString();
+    localStorage.setItem('se_facturas_recibidas', JSON.stringify(facturas));
+  }
+  return facturas[idx];
+};
+
+export const reclamarFactura = (id_dte, tipoReclamo, motivo) => {
+  const facturas = getFacturasRecibidas();
+  const idx = facturas.findIndex(f => f.id_dte === id_dte);
+  if (idx !== -1) {
+    facturas[idx].estado = 'Reclamada';
+    facturas[idx].dias_restantes = 0;
+    facturas[idx].tipo_reclamo = tipoReclamo;
+    facturas[idx].motivo_reclamo = motivo;
+    facturas[idx].fecha_reclamo = new Date().toISOString();
+    localStorage.setItem('se_facturas_recibidas', JSON.stringify(facturas));
+  }
+  return facturas[idx];
+};
+
+export const ingresarStockFactura = (id_dte) => {
+  const facturas = getFacturasRecibidas();
+  const factura = facturas.find(f => f.id_dte === id_dte);
+  if (!factura) throw new Error('Factura no encontrada');
+  if (factura.stock_ingresado) {
+    throw new Error('El stock de esta factura ya fue ingresado previamente.');
+  }
+
+  const products = getProducts();
+  let actualizados = 0;
+  let creados = 0;
+  const itemsIngresados = [];
+
+  const normalize = str => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u06ff]/g, "").trim();
+
+  factura.items.forEach(item => {
+    const descLower = item.descripcion.toLowerCase();
+    // Omitir servicios no inventariables (flete, seguro, etc.)
+    if (descLower.includes('flete') || descLower.includes('seguro') || descLower.includes('despacho') || descLower.includes('servicio')) {
+      return;
+    }
+
+    const itemNorm = normalize(item.descripcion);
+
+    // Buscar coincidencia por nombre comercial o similar
+    let prodMatch = products.find(p => {
+      const pNorm = normalize(p.nombre_comercial);
+      return pNorm === itemNorm || itemNorm.includes(pNorm) || pNorm.includes(itemNorm);
+    });
+
+    if (prodMatch) {
+      // ✅ EXISTE: Incrementar stock
+      prodMatch.stock = Math.round((Number(prodMatch.stock) + Number(item.cantidad)) * 100) / 100;
+      actualizados++;
+      itemsIngresados.push({
+        nombre: prodMatch.nombre_comercial,
+        cantidad: item.cantidad,
+        tipo: 'actualizado',
+        nuevoStock: prodMatch.stock
+      });
+    } else {
+      // ✨ NO EXISTE: Crear nuevo producto en el catálogo
+      const maxId = products.reduce((max, p) => p.id > max ? p.id : max, 0);
+      const isCarnes = descLower.includes('carne') || descLower.includes('lomo') || descLower.includes('bife') || descLower.includes('entraña') || descLower.includes('nalga') || descLower.includes('cerdo') || descLower.includes('pollo') || descLower.includes('chorizo') || descLower.includes('longaniza') || descLower.includes('costillar') || descLower.includes('vacuno') || descLower.includes('novillo');
+
+      const newProduct = {
+        id: maxId + 1,
+        id_categoria: isCarnes ? 1 : 3, // 1: Carnes, 3: Abarrotes
+        codigo_barras: '789' + String(Date.now()).slice(-9),
+        nombre_comercial: item.descripcion,
+        presentacion: item.unidad || 'kg',
+        precio_venta: Math.round(item.precio_unitario * 1.30), // Precio sugerido de venta (+30% margen)
+        stock_minimo: 5,
+        stock: Number(item.cantidad),
+        activo: 1,
+        imagen: isCarnes ? 'carnepicada' : 'aceite'
+      };
+
+      products.push(newProduct);
+      creados++;
+      itemsIngresados.push({
+        nombre: newProduct.nombre_comercial,
+        cantidad: item.cantidad,
+        tipo: 'creado',
+        nuevoStock: newProduct.stock
+      });
+    }
+  });
+
+  // Guardar catálogo actualizado
+  localStorage.setItem('se_products', JSON.stringify(products));
+
+  // Marcar la factura como stock ingresado
+  factura.stock_ingresado = true;
+  factura.fecha_ingreso_stock = new Date().toISOString();
+  localStorage.setItem('se_facturas_recibidas', JSON.stringify(facturas));
+
+  return { actualizados, creados, itemsIngresados };
 };

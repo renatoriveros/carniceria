@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import POS_SDK from 'transbank-pos-sdk-web';
 import {
   getProducts,
   getCategories,
@@ -139,6 +140,11 @@ export default function POS({ onSaleCompleted }) {
   const [checkoutError, setCheckoutError] = useState('');
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
 
+  // Estado Transbank POS
+  const [transbankStatus, setTransbankStatus] = useState('idle'); // idle | connecting | waiting | approved | rejected | error
+  const [transbankMessage, setTransbankMessage] = useState('');
+  const [transbankResponse, setTransbankResponse] = useState(null);
+
   // Estados nuevos: Control del Carrito y Escaneo de Balanza
   const [showCart, setShowCart] = useState(true);
   const [showScaleScan, setShowScaleScan] = useState(false);
@@ -234,7 +240,7 @@ export default function POS({ onSaleCompleted }) {
 
 
   // Checkout submission
-  const handleCheckoutSubmit = (e) => {
+  const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
     if (cart.length === 0) return;
 
@@ -249,15 +255,25 @@ export default function POS({ onSaleCompleted }) {
         setCheckoutError('El monto recibido debe ser igual o mayor al total.');
         return;
       }
+      finalizeSale('Efectivo');
+    } else if (paymentMethod === 'Tarjeta') {
+      await handleTransbankSale();
     }
+  };
 
+  const finalizeSale = (metodo) => {
     try {
       createSale({
         items: cart,
         subtotal,
         descuento: discount,
         total,
-        metodo_pago: paymentMethod
+        metodo_pago: metodo,
+        ...(transbankResponse && {
+          transbank_auth_code: transbankResponse.authorizationCode,
+          transbank_last4: transbankResponse.last4Digits,
+          transbank_response_code: transbankResponse.responseCode,
+        })
       });
 
       // Clear state
@@ -266,8 +282,10 @@ export default function POS({ onSaleCompleted }) {
       setReceivedAmount('');
       setCheckoutError('');
       setShowCheckout(false);
+      setTransbankStatus('idle');
+      setTransbankResponse(null);
+      setTransbankMessage('');
 
-      // Notify parent to refresh stocks/caja if needed
       if (onSaleCompleted) onSaleCompleted();
       alert('Venta registrada con éxito.');
     } catch (err) {
@@ -365,6 +383,106 @@ export default function POS({ onSaleCompleted }) {
       alert('Código de balanza no reconocido. Formatos válidos: EAN-13 (2000008012503) o SKU-PESO (789123456008-1.25)');
     }
   };
+
+  // ─── TRANSBANK POS INTEGRADO ───────────────────────────
+  const handleTransbankSale = async () => {
+    setTransbankStatus('connecting');
+    setTransbankMessage('');
+    setCheckoutError('');
+
+    try {
+      let connected = false;
+      try {
+        connected = await POS_SDK.connect();
+      } catch (connectErr) {
+        setTransbankStatus('error');
+        setTransbankMessage(
+          'No se pudo conectar con el Agente Transbank. Verifique que el programa "Transbank POS Agent" esté ejecutándose en este computador.'
+        );
+        return;
+      }
+
+      if (!connected) {
+        setTransbankStatus('error');
+        setTransbankMessage('El Agente Transbank no respondió. Reinicie el programa e intente de nuevo.');
+        return;
+      }
+
+      const ports = await POS_SDK.getPorts();
+      if (!ports || ports.length === 0) {
+        setTransbankStatus('error');
+        setTransbankMessage('No se detectó ningún terminal POS conectado. Verifique el cable USB.');
+        return;
+      }
+
+      const openResult = await POS_SDK.openPort(ports[0]);
+      if (!openResult) {
+        setTransbankStatus('error');
+        setTransbankMessage(`No se pudo abrir el puerto ${ports[0]}. Verifique que el terminal esté encendido.`);
+        return;
+      }
+
+      try {
+        await POS_SDK.loadKeys();
+      } catch (keysErr) {
+        console.warn('loadKeys warning:', keysErr);
+      }
+
+      setTransbankStatus('waiting');
+      const ticketId = String(Date.now()).slice(-6);
+      const saleResponse = await POS_SDK.doSale(Math.round(total), ticketId);
+
+      if (saleResponse && saleResponse.responseCode === 0) {
+        setTransbankStatus('approved');
+        const tbResp = {
+          responseCode: saleResponse.responseCode,
+          authorizationCode: saleResponse.authorizationCode || 'N/A',
+          last4Digits: saleResponse.last4Digits || saleResponse.cardNumber?.slice(-4) || '****',
+          transactionDate: saleResponse.realDate || new Date().toISOString(),
+          operationNumber: saleResponse.operationNumber || ticketId,
+        };
+        setTransbankResponse(tbResp);
+        setTimeout(() => {
+          finalizeSale('Tarjeta');
+        }, 1500);
+      } else {
+        setTransbankStatus('rejected');
+        setTransbankMessage(
+          saleResponse?.responseMessage ||
+          `Código de respuesta: ${saleResponse?.responseCode || 'desconocido'}. La transacción fue rechazada por el banco.`
+        );
+      }
+
+      try {
+        await POS_SDK.closePort();
+      } catch (closeErr) {
+        console.warn('Error cerrando puerto Transbank:', closeErr);
+      }
+
+    } catch (err) {
+      console.error('Error Transbank:', err);
+      setTransbankStatus('error');
+      setTransbankMessage(
+        err.message || 'Error inesperado durante la comunicación con Transbank. Intente de nuevo.'
+      );
+    }
+  };
+
+  const handleTransbankCancel = async () => {
+    try {
+      setTransbankStatus('idle');
+      setTransbankMessage('');
+      try {
+        await POS_SDK.closePort();
+      } catch (e) {
+        // Ignorar
+      }
+    } catch (err) {
+      console.warn('Error al cancelar Transbank:', err);
+      setTransbankStatus('idle');
+    }
+  };
+  // ─── FIN TRANSBANK ──────────────────────────────────────
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(val);
@@ -622,12 +740,16 @@ export default function POS({ onSaleCompleted }) {
 
               <div className="form-group">
                 <label>Método de Pago</label>
-                <div className="payment-methods-grid">
-                  {['Efectivo', 'Tarjeta de Débito', 'Tarjeta de Crédito', 'Transferencia'].map(method => (
+                <div className="payment-methods-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                  {['Efectivo', 'Tarjeta'].map(method => (
                     <button
                       key={method}
                       type="button"
-                      onClick={() => setPaymentMethod(method)}
+                      onClick={() => {
+                        setPaymentMethod(method);
+                        setTransbankStatus('idle');
+                        setTransbankMessage('');
+                      }}
                       className={`payment-method-btn ${paymentMethod === method ? 'active' : ''}`}
                     >
                       {method}
@@ -676,12 +798,84 @@ export default function POS({ onSaleCompleted }) {
                 </div>
               )}
 
+              {paymentMethod === 'Tarjeta' && (
+                <div className="transbank-payment-section">
+                  {transbankStatus === 'idle' && (
+                    <div className="transbank-ready-box">
+                      <p>Al confirmar, se enviará el monto de <strong>{formatCurrency(total)}</strong> al terminal Transbank.</p>
+                      <p className="transbank-hint">El cliente deberá pasar o insertar su tarjeta en el equipo.</p>
+                    </div>
+                  )}
+                  {transbankStatus === 'connecting' && (
+                    <div className="transbank-waiting-box">
+                      <div className="spinner"></div>
+                      <p>Conectando con terminal Transbank...</p>
+                    </div>
+                  )}
+                  {transbankStatus === 'waiting' && (
+                    <div className="transbank-waiting-box">
+                      <div className="spinner"></div>
+                      <p>Esperando que el cliente pase la tarjeta...</p>
+                      <span className="transbank-hint">Monto: {formatCurrency(total)}</span>
+                      <button
+                        type="button"
+                        onClick={handleTransbankCancel}
+                        className="transbank-cancel-btn"
+                      >
+                        Cancelar Transacción
+                      </button>
+                    </div>
+                  )}
+                  {transbankStatus === 'approved' && (
+                    <div className="transbank-success-box">
+                      <span className="transbank-check">✓</span>
+                      <p>¡Transacción Aprobada!</p>
+                      {transbankResponse && (
+                        <div className="transbank-details">
+                          <span>Código autorización: {transbankResponse.authorizationCode}</span>
+                          <span>Últimos 4 dígitos: {transbankResponse.last4Digits}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {transbankStatus === 'rejected' && (
+                    <div className="transbank-error-box">
+                      <span className="transbank-x">✗</span>
+                      <p>Transacción Rechazada</p>
+                      <span>{transbankMessage}</span>
+                      <button type="button" onClick={() => setTransbankStatus('idle')} className="transbank-retry-btn">
+                        Reintentar
+                      </button>
+                    </div>
+                  )}
+                  {transbankStatus === 'error' && (
+                    <div className="transbank-error-box">
+                      <span className="transbank-x">⚠</span>
+                      <p>Error de Comunicación</p>
+                      <span>{transbankMessage}</span>
+                      <button type="button" onClick={() => setTransbankStatus('idle')} className="transbank-retry-btn">
+                        Reintentar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="modal-footer">
                 <button type="button" onClick={() => setShowCheckout(false)} className="modal-btn-cancel">
                   Cancelar
                 </button>
-                <button type="submit" className="modal-btn-confirm">
-                  Confirmar Cobro
+                <button
+                  type="submit"
+                  className="modal-btn-confirm"
+                  disabled={paymentMethod === 'Tarjeta' && ['connecting', 'waiting'].includes(transbankStatus)}
+                >
+                  {paymentMethod === 'Tarjeta' && transbankStatus === 'approved'
+                    ? 'Registrar Venta'
+                    : paymentMethod === 'Tarjeta' && ['connecting', 'waiting'].includes(transbankStatus)
+                    ? 'Procesando...'
+                    : 'Confirmar Cobro'
+                  }
                 </button>
               </div>
             </form>
@@ -1740,6 +1934,139 @@ export default function POS({ onSaleCompleted }) {
 
         .modal-btn-confirm:hover {
           background: var(--primary-hover);
+        }
+
+        /* Transbank UI Styles */
+        .transbank-payment-section {
+          margin-top: 8px;
+        }
+
+        .transbank-ready-box {
+          background-color: #eff6ff;
+          border: 1px solid #bfdbfe;
+          border-radius: var(--radius-sm);
+          padding: 16px;
+          text-align: center;
+          font-size: 13px;
+          color: #1e40af;
+          line-height: 1.5;
+        }
+
+        .transbank-hint {
+          font-size: 11px;
+          color: #6b7280;
+          margin-top: 4px;
+          display: block;
+        }
+
+        .transbank-waiting-box {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          padding: 24px;
+          text-align: center;
+          background: #fefce8;
+          border: 1px solid #fde68a;
+          border-radius: var(--radius-sm);
+          font-size: 14px;
+          font-weight: 600;
+          color: #92400e;
+        }
+
+        .spinner {
+          width: 36px;
+          height: 36px;
+          border: 4px solid #e5e7eb;
+          border-top: 4px solid var(--primary);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .transbank-cancel-btn {
+          padding: 6px 14px;
+          background: transparent;
+          border: 1px solid #dc2626;
+          color: #dc2626;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          margin-top: 8px;
+        }
+
+        .transbank-cancel-btn:hover {
+          background: #fef2f2;
+        }
+
+        .transbank-success-box {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 20px;
+          background: #f0fdf4;
+          border: 1px solid #86efac;
+          border-radius: var(--radius-sm);
+          text-align: center;
+        }
+
+        .transbank-check {
+          font-size: 32px;
+          color: #16a34a;
+        }
+
+        .transbank-success-box p {
+          font-size: 16px;
+          font-weight: 700;
+          color: #15803d;
+        }
+
+        .transbank-details {
+          display: flex;
+          flex-direction: column;
+          font-size: 12px;
+          color: #6b7280;
+          gap: 2px;
+        }
+
+        .transbank-error-box {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 20px;
+          background: #fef2f2;
+          border: 1px solid #fca5a5;
+          border-radius: var(--radius-sm);
+          text-align: center;
+        }
+
+        .transbank-x {
+          font-size: 32px;
+          color: #dc2626;
+        }
+
+        .transbank-error-box p {
+          font-size: 16px;
+          font-weight: 700;
+          color: #991b1b;
+        }
+
+        .transbank-retry-btn {
+          padding: 6px 14px;
+          background: var(--primary);
+          color: white;
+          border: none;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          margin-top: 4px;
         }
 
         /* Mobile adaptation */

@@ -7,6 +7,7 @@ import Stock from './components/Stock';
 import CerrarCaja from './components/CerrarCaja';
 import Dashboard from './components/Dashboard';
 import Boletas from './components/Boletas';
+import FacturasRecibidas from './components/FacturasRecibidas';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -250,6 +251,9 @@ export default function App() {
         )}
         {currentTab === 'boletas' && (
           <Boletas key={`boletas-${dataTrigger}`} />
+        )}
+        {currentTab === 'facturas' && (
+          <FacturasRecibidas key={`facturas-${dataTrigger}`} />
         )}
       </main>
 
